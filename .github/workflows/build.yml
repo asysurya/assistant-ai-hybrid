@@ -1,0 +1,65 @@
+# ============================================================
+# AssistantAI — GitHub Actions: Build CI
+# ------------------------------------------------------------
+# - Push/PR ke main  -> install deps + jalankan test
+#                      (+ build .exe bila assistant.spec sudah ada)
+# - PyInstaller TIDAK bisa cross-compile antar arsitektur, jadi:
+#     * job x64   -> runner windows-latest (x64)
+#     * job arm64 -> runner windows-11-arm (ARM64 native, gratis utk repo publik)
+# ============================================================
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:        # tombol "Run workflow" manual di tab Actions
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false      # satu arsitektur gagal, jangan batalkan yang lain
+      matrix:
+        include:
+          - os: windows-latest      # runner x64 -> build untuk Windows x64
+            arch: x64
+          - os: windows-11-arm      # runner ARM64 native -> build untuk ARM64
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    # Beberapa wheel (mis. vosk/piper) belum tentu tersedia untuk ARM64 —
+    # job arm64 dibuat non-blocking sampai semua dependensi aman.
+    continue-on-error: ${{ matrix.arch == 'arm64' }}
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependensi
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Jalankan test
+        run: python -m pytest tests/ -v
+
+      # Langkah build otomatis AKTIF begitu assistant.spec dibuat (FASE 11).
+      # Sebelum fase itu, CI cukup memastikan deps + test hijau di kedua arsitektur.
+      - name: Build binary (.exe)
+        if: ${{ hashFiles('assistant.spec') != '' }}
+        run: pyinstaller assistant.spec --clean --noconfirm
+
+      - name: Upload artifact
+        if: ${{ hashFiles('assistant.spec') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: AssistantAI-${{ matrix.arch }}
+          path: dist/

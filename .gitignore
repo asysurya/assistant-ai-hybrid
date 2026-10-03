@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Build
+build/
+dist/
+*.spec.bak
+*.egg
+
+# Config pribadi (JANGAN commit)
+config.json
+keys.enc
+*.env
+.env.local
+*.local.json
+
+# Database & Log
+*.db
+*.log
+logs/
+
+# Model (JANGAN commit)
+models/
+*.gguf
+*.onnx
+*.bin
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

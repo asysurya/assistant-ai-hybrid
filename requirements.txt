@@ -1,0 +1,41 @@
+# ============================================================
+# AssistantAI — dependensi Python
+# Target : Python 3.11+ (Windows 11 ARM64)
+# Install: pip install -r requirements.txt
+#
+# Prinsip:
+#   - Paket di bagian CORE ikut di-bundle ke binary (~35-40 MB).
+#   - Paket berat (torch, transformers, vosk, piper) TIDAK di-bundle —
+#     di-download on-demand lewat Download Manager (FASE 9).
+# ============================================================
+
+# ---------- CORE (ikut di-bundle ke binary) ----------
+openai>=1.40.0          # SDK official — dipakai untuk Ollama Cloud & lokal (API kompatibel OpenAI)
+httpx>=0.27.0           # HTTP client async untuk util jaringan
+pydantic>=2.8.0         # validasi struktur data (config, response, tool schema)
+psutil>=6.0.0           # system monitor: CPU / RAM / disk / network / battery
+Pillow>=10.4.0          # proses gambar (preview upload, thumbnail, base64 ke vision)
+customtkinter>=5.2.2    # UI modern berbasis tkinter (ringan, cocok RAM 8GB)
+pystray>=0.19.5         # ikon system tray + menu tray
+keyboard>=0.13.5        # hotkey global (Ctrl+Space, Ctrl+Shift+V)
+pyperclip>=1.8.2        # clipboard (tombol "Copy" di code block chat)
+keyring>=25.0.0         # simpan API key di Windows Credential Manager (FASE 4)
+pyttsx3>=2.90           # TTS fallback (Windows SAPI) — selalu tersedia offline
+
+# ---------- FILE PARSER (FASE 3) ----------
+# Diceo (11 MB, 11 format) belum tersedia di PyPI — install dari wheel lokal
+# yang Anda miliki, contoh:
+#   pip install diceo-<versi>-py3-none-any.whl
+# Baris di bawah sengaja di-comment supaya CI (GitHub Actions) tidak gagal.
+#diceo>=1.0.0
+
+# ---------- VOICE (FASE 8-9) — TIDAK di-bundle, download on-demand ----------
+# Modul + model suara diunduh lewat Download Manager saat fitur dipakai.
+# Sengaja di-comment supaya CI/ARM64 tidak gagal karena wheel belum tentu ada;
+# aktifkan manual saat sudah masuk fase voice:
+#sounddevice>=0.4.6     # rekam audio (streaming mic)
+#vosk>=0.3.45           # STT offline Bahasa Indonesia (~50 MB model)
+#piper-tts>=1.2.0       # TTS natural (~80 MB model)
+
+# ---------- DEV / TESTING ----------
+pytest>=8.0.0           # dipakai CI (build.yml) dan pengembangan lokal
