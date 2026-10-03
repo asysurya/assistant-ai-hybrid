@@ -10,12 +10,11 @@ antara model **lokal** (Ollama, offline & gratis) dan model **cloud** (Ollama Cl
 
 | | |
 |---|---|
-| Build CI | [![Build](https://github.com/USERNAME/assistant-ai-hybrid/actions/workflows/build.yml/badge.svg)](https://github.com/USERNAME/assistant-ai-hybrid/actions/workflows/build.yml) |
+| Build CI | [![Build](https://github.com/asysurya/assistant-ai-hybrid/actions/workflows/build.yml/badge.svg)](https://github.com/asysurya/assistant-ai-hybrid/actions/workflows/build.yml) |
 | Lisensi | MIT — lihat [LICENSE](LICENSE) |
 | Python | 3.11+ |
 
-> Catatan: ganti `USERNAME` pada badge dan URL dengan username GitHub Anda,
-> serta `[Nama Anda]` pada LICENSE dengan nama Anda.
+> Catatan: ganti `[Nama Anda]` pada LICENSE dengan nama Anda.
 
 ## Kenapa hybrid?
 
@@ -94,7 +93,7 @@ Prasyarat: Python 3.11+ dan Git. Target utama Windows 11, tetapi kode tetap
 cross-platform (di Linux/macOS data disimpan di `~/.assistantai`).
 
 ```powershell
-git clone https://github.com/USERNAME/assistant-ai-hybrid.git
+git clone https://github.com/asysurya/assistant-ai-hybrid.git
 cd assistant-ai-hybrid
 
 python -m venv .venv

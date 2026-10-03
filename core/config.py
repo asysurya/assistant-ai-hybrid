@@ -38,8 +38,8 @@ APP_VERSION = "0.1.0"   # ikuti Semantic Versioning, sinkron dengan CHANGELOG.md
 APP_AUTHOR = "AssistantAI Contributors"
 APP_DESCRIPTION = "Asisten AI hybrid desktop (lokal + cloud) untuk Windows"
 
-# Ganti USERNAME dengan username GitHub Anda setelah repo dibuat
-GITHUB_REPO_URL = "https://github.com/USERNAME/assistant-ai-hybrid"
+# Repo GitHub proyek ini
+GITHUB_REPO_URL = "https://github.com/asysurya/assistant-ai-hybrid"
 
 # ------------------------------------------------------------
 # 2. Direktori data aplikasi
