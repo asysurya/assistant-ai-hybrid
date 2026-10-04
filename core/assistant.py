@@ -29,6 +29,7 @@ demo ini memperlihatkan graceful degradation):
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -39,14 +40,34 @@ try:                                    # dipakai sebagai paket proyek
     from core.cloud_client import CloudClient, CloudClientError
     from core.tier_router import RoutingDecision, Tier, TierRouter
     from core.vision import punya_gambar
+    from core.agent import Agent
 except ImportError:                     # dijalankan langsung dari folder core/
     import config as cfg  # type: ignore
     from local_client import LocalClient, LocalClientError
     from cloud_client import CloudClient, CloudClientError
     from tier_router import RoutingDecision, Tier, TierRouter
     from vision import punya_gambar
+    from agent import Agent  # type: ignore
 
 logger = logging.getLogger("assistant.assistant")
+
+# Regex pembuang blok penalaran model Qwen3 ("<think>...</think>").
+# Hanya pasangan LENGKAP yang dibuang — tag terbuka (mis. jawaban terpotong
+# di tengah berpikir) dibiarkan apa adanya agar masalahnya terlihat.
+_RE_THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _buang_tag_think(teks: str) -> str:
+    """Buang blok <think>...</think> milik model reasoning (Qwen3).
+
+    Model tier 2 (qwen3:1.7b) sering menyisipkan proses berpikir di
+    dalam jawaban — tidak enak ditampilkan ke user. Fungsi ini membersihkannya
+    TANPA menyentuh jawaban model lain (tanpa tag = tanpa perubahan).
+    """
+    if not teks or "<think>" not in teks:
+        return teks
+    bersih = _RE_THINK.sub("", teks)
+    return bersih.strip()
 
 
 # ------------------------------------------------------------
@@ -96,13 +117,19 @@ class Assistant:
         cloud: Optional[Any] = None,      # CloudClient / fake
         router: Optional[TierRouter] = None,
         system_prompt: Optional[str] = None,
+        tools: Optional[Any] = None,      # ToolRegistry / None (FASE 2)
+        agent: Optional[Any] = None,      # Agent custom utk test (opsional)
     ):
         """
         Args:
             config: ConfigManager — bila diberikan, model/token per-tier
-                dibaca dari config.json (bagian "tiers").
+                dibaca dari config.json (bagian "tiers"), dan flag
+                tools.enabled menentukan apakah agent tool-calling aktif.
             local/cloud/router: dependency injection (utk test & penggantian).
             system_prompt: instruksi awal untuk model (opsional).
+            tools: ToolRegistry — bila diberikan, Tier 2 & Tier 3 diproses
+                lewat Agent (tool calling). Tier 1 tetap chat polos.
+            agent: pengganti Agent bawaan (injection utk test).
         """
         self._config = config
         self.router = router or TierRouter()
@@ -113,6 +140,12 @@ class Assistant:
             cloud = CloudClient()
         self.local = local
         self.cloud = cloud
+        # --- Tool calling (FASE 2) ---
+        self.tools = tools
+        self.agent = agent or (Agent(tools) if tools is not None else None)
+        # Jejak tools yang dipakai PADA chat() terakhir (dibaca CLI/UI;
+        # kosong = chat terakhir murni teks tanpa tool).
+        self.tools_terakhir: list[str] = []
         # Statistik pemakaian (dipakai CLI /stats dan monitoring nanti)
         self._statistik: dict[str, int] = {
             "tier1": 0, "tier2": 0, "tier3": 0, "vision": 0,
@@ -143,6 +176,7 @@ class Assistant:
         if not prompt and not image_url:
             raise ValueError("Prompt kosong — tulis pertanyaan dulu.")
 
+        self.tools_terakhir = []          # reset jejak tool utk chat ini
         messages = self._bangun_messages(prompt, history, image_url)
 
         # --- 1. Bypass vision: ada gambar -> langsung model vision (cloud) ---
@@ -178,7 +212,7 @@ class Assistant:
 
             jalur.append(f"{tier.value}: sukses")
             return AssistantReply(
-                text=teks.strip(),
+                text=_buang_tag_think(teks).strip(),   # buang <think> Qwen3
                 tier_used=tier,
                 decision=decision,
                 escalation=jalur,
@@ -223,15 +257,39 @@ class Assistant:
         return chain
 
     def _panggil_tier(self, tier: Tier, messages: list[dict]) -> str:
-        """Panggil klien yang sesuai untuk satu tier (model dari settings)."""
+        """Panggil klien yang sesuai untuk satu tier (model dari settings).
+
+        Tier 2 & 3 bila tools aktif -> lewat Agent (tool calling loop).
+        Error klien (LocalClientError/CloudClientError/AgentMaxIterations)
+        dibiarkan naik — chat() yang menangkap utk escalation.
+        """
         s = self._tier_settings()
+        pakai_agent = (self.agent is not None and self._tools_aktif()
+                       and tier != Tier.TIER_1)      # tier 1 selalu chat polos
         if tier == Tier.TIER_1:
             return self.local.chat(messages, model=s["tier1_model"],
                                    max_tokens=s["tier1_max_tokens"])
         if tier == Tier.TIER_2:
+            if pakai_agent:
+                hasil = self.agent.run(self.local, messages,
+                                       model=s["tier2_model"],
+                                       max_tokens=s["tier2_max_tokens"])
+                self.tools_terakhir.extend(hasil.tools_dipakai)
+                return hasil.jawaban
             return self.local.chat(messages, model=s["tier2_model"],
                                    max_tokens=s["tier2_max_tokens"])
+        # --- Tier 3 (cloud) ---
+        if pakai_agent:
+            hasil = self.agent.run(self.cloud, messages, model=s["tier3_model"])
+            self.tools_terakhir.extend(hasil.tools_dipakai)
+            return hasil.jawaban
         return self.cloud.chat(messages, model=s["tier3_model"])
+
+    def _tools_aktif(self) -> bool:
+        """Flag tools.enabled dari config (default cfg.TOOLS_ENABLED=True)."""
+        if self._config is not None:
+            return bool(self._config.get("tools.enabled", cfg.TOOLS_ENABLED))
+        return bool(cfg.TOOLS_ENABLED)
 
     def _coba_vision(self, messages: list[dict]) -> AssistantReply:
         """Jalur vision: model vision di cloud (fallback lokal tidak ada yang
@@ -253,7 +311,7 @@ class Assistant:
             return AssistantReply(text=self._pesan_gagal(jalur), tier_used=Tier.VISION,
                                   decision=None, escalation=jalur, ok=False)
         jalur.append("vision: sukses")
-        return AssistantReply(text=teks.strip(), tier_used=Tier.VISION,
+        return AssistantReply(text=_buang_tag_think(teks).strip(), tier_used=Tier.VISION,
                               decision=None, escalation=jalur, ok=True)
 
     def _bangun_messages(

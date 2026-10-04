@@ -21,7 +21,9 @@ Cara test cepat (perlu Ollama jalan di localhost:11434):
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 try:                                    # dipakai sebagai paket proyek
@@ -37,6 +39,25 @@ except ImportError:
     _OPENAI_TERSEDIA = False
 
 logger = logging.getLogger("assistant.local_client")
+
+
+# ------------------------------------------------------------
+# ReplyDetail — jawaban model LENGKAP (teks + tool_calls)
+# ------------------------------------------------------------
+@dataclass
+class ReplyDetail:
+    """Hasil chat versi lengkap — dipakai Agent (core/agent.py).
+
+    chat() cukup teks polos; tapi tool-calling butuh akses tool_calls.
+    Bentuk dict tool_calls yang normalisasi:
+        {"id": "call_...", "nama": "hitung", "argumen_mentah": "{\"ekspresi\":\"2+2\"}"}
+    `argumen_mentah` sengaja tetap berupa STRING JSON persis seperti
+    format OpenAI — parsing dilakukan agent agar error bisa dikirim
+    balik ke model untuk dikoreksi sendiri.
+    """
+    konten: str = ""
+    tool_calls: list[dict] = field(default_factory=list)
+    finish_reason: str = ""
 
 
 # ------------------------------------------------------------
@@ -132,6 +153,28 @@ class LocalClient:
             LocalModelNotAvailable: model belum di-pull (404).
             LocalClientError: masalah lain (koneksi, HTTP, format jawaban).
         """
+        return self.chat_detail(
+            messages, model=model, max_tokens=max_tokens, temperature=temperature
+        ).konten
+
+    def chat_detail(
+        self,
+        messages: list[dict],
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> ReplyDetail:
+        """Versi LENGKAP dari chat(): teks + tool_calls (untuk Agent).
+
+        Args:
+            tools: skema tools format OpenAI (hasil ToolRegistry.skema_openai()).
+                None / list kosong -> tidak dikirim ke model.
+
+        Raises:
+            LocalModelNotAvailable: model belum di-pull (404).
+            LocalClientError: masalah lain (koneksi, HTTP, format jawaban).
+        """
         model = model or cfg.OLLAMA_LOCAL_MODEL
         kwargs: dict[str, Any] = {
             "model": model,
@@ -140,17 +183,49 @@ class LocalClient:
         }
         if temperature is not None:
             kwargs["temperature"] = float(temperature)
+        if tools:                            # jangan kirim list kosong
+            kwargs["tools"] = tools
 
         resp = self._panggil_sdk(kwargs)
+        return self._ke_detail(resp)
 
+    def _ke_detail(self, resp: Any) -> ReplyDetail:
+        """Ubah response SDK -> ReplyDetail (TOLERAN: fake/test tanpa tool_calls).
+
+        getattr dipakai (bukan akses atribut langsung) supaya objek response
+        minimalis — mis. SimpleNamespace dengan `content` saja pada unit test —
+        tetap terbaca sebagai jawaban teks biasa tanpa tool_calls.
+        """
         try:
-            content = resp.choices[0].message.content or ""
+            pilihan = resp.choices[0]
+            pesan = pilihan.message
         except (AttributeError, IndexError) as exc:
             raise LocalClientError(
                 f"Format jawaban Ollama lokal tidak dikenali: {resp!r}"
             ) from exc
-        logger.debug("Lokal OK (model=%s, %d karakter)", model, len(content))
-        return content
+
+        konten = getattr(pesan, "content", None) or ""
+        daftar_calls: list[dict] = []
+        for tc in (getattr(pesan, "tool_calls", None) or []):
+            fungsi = getattr(tc, "function", None)
+            if fungsi is None or not getattr(fungsi, "name", None):
+                logger.warning("tool_calls malformasi dilewati: %r", tc)
+                continue
+            argumen = getattr(fungsi, "arguments", "{}") or "{}"
+            if not isinstance(argumen, str):     # beberapa backend kirim dict
+                argumen = json.dumps(argumen, ensure_ascii=False)
+            daftar_calls.append({
+                "id": getattr(tc, "id", "") or "",
+                "nama": fungsi.name,
+                "argumen_mentah": argumen,
+            })
+        logger.debug("Lokal OK (%d karakter, %d tool_calls)",
+                     len(konten), len(daftar_calls))
+        return ReplyDetail(
+            konten=konten,
+            tool_calls=daftar_calls,
+            finish_reason=getattr(pilihan, "finish_reason", "") or "",
+        )
 
     def _panggil_sdk(self, kwargs: dict[str, Any]) -> Any:
         """Panggil SDK + terjemahkan error ke exception lokal yang jelas.

@@ -109,6 +109,15 @@ def _default_config() -> dict:
         "agent": {
             "max_iterations": cfg.AGENT_MAX_ITERATIONS,
         },
+        "tools": {
+            "enabled": cfg.TOOLS_ENABLED,
+            "workspace": str(cfg.TOOLS_WORKSPACE),
+            "max_file_bytes": cfg.TOOL_MAX_FILE_BYTES,
+            "write_confirm": cfg.TOOL_WRITE_CONFIRM,
+        },
+        "history": {
+            "max_context_messages": cfg.HISTORY_MAX_CONTEXT,
+        },
         "files": {
             "max_tokens_chunk": cfg.FILE_MAX_TOKENS,
         },

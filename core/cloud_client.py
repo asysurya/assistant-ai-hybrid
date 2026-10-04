@@ -29,9 +29,11 @@ from typing import Any, Optional
 try:                                    # dipakai sebagai paket proyek
     from core import config as cfg
     from core.key_pool import KeyPool, KeyPoolError, NoKeyAvailableError, mask_key
+    from core.local_client import ReplyDetail
 except ImportError:                     # dijalankan langsung dari folder core/
     import config as cfg  # type: ignore
     from key_pool import KeyPool, KeyPoolError, NoKeyAvailableError, mask_key
+    from local_client import ReplyDetail  # type: ignore
 
 # Import "lunak" — modul tetap bisa di-import walau paket openai belum ada.
 try:
@@ -116,8 +118,15 @@ class CloudClient:
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-    ) -> str:
+        tools: Optional[list[dict]] = None,     # skema OpenAI (Agent tool-calling)
+        _detail: bool = False,                  # internal: True -> ReplyDetail
+    ) -> str | ReplyDetail:
         """Kirim messages → teks jawaban, dengan rotasi key otomatis.
+
+        Args:
+            tools: skema tools format OpenAI; None/kosong -> tidak dikirim.
+            _detail: True -> kembalikan ReplyDetail (teks + tool_calls),
+                dipakai core/agent.py. Pemanggil normal tidak perlu menyentuh.
 
         Raises:
             CloudRateLimited: semua key cooldown (429).
@@ -154,6 +163,8 @@ class CloudClient:
             }
             if temperature is not None:
                 kwargs["temperature"] = float(temperature)
+            if tools:                              # jangan kirim list kosong
+                kwargs["tools"] = tools
 
             try:
                 resp = self._panggil_sdk(klien, kwargs)
@@ -194,6 +205,8 @@ class CloudClient:
                 raise CloudClientError(f"Error tak terduga pada Ollama Cloud: {exc}") from exc
 
             self.pool.mark_success(key)
+            if _detail:                        # Agent butuh tool_calls juga
+                return self._ke_detail(resp)
             try:
                 content = resp.choices[0].message.content or ""
             except (AttributeError, IndexError) as exc:
@@ -215,6 +228,56 @@ class CloudClient:
                 f"{error_terakhir}"
             )
         raise CloudClientError(f"Ollama Cloud gagal setelah {percobaan_maks} percobaan. {error_terakhir}")
+
+    def chat_detail(
+        self,
+        messages: list[dict],
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> ReplyDetail:
+        """Versi LENGKAP dari chat(): teks + tool_calls (dipakai Agent).
+
+        Rotasi key & penanganan 429/401 identik dengan chat() — memang
+        satu alur kode, hanya bentuk hasilnya berbeda.
+        """
+        hasil = self.chat(messages, model=model, max_tokens=max_tokens,
+                          temperature=temperature, tools=tools, _detail=True)
+        assert isinstance(hasil, ReplyDetail)   # _detail=True dijamin ReplyDetail
+        return hasil
+
+    def _ke_detail(self, resp: Any) -> ReplyDetail:
+        """Ubah response SDK -> ReplyDetail (TOLERAN utk response minimalis test)."""
+        try:
+            pilihan = resp.choices[0]
+            pesan = pilihan.message
+        except (AttributeError, IndexError) as exc:
+            raise CloudClientError(
+                f"Format jawaban Ollama Cloud tidak dikenali: {resp!r}"
+            ) from exc
+        konten = getattr(pesan, "content", None) or ""
+        daftar_calls: list[dict] = []
+        for tc in (getattr(pesan, "tool_calls", None) or []):
+            fungsi = getattr(tc, "function", None)
+            if fungsi is None or not getattr(fungsi, "name", None):
+                logger.warning("tool_calls malformasi dilewati: %r", tc)
+                continue
+            argumen = getattr(fungsi, "arguments", "{}") or "{}"
+            if not isinstance(argumen, str):     # beberapa backend kirim dict
+                import json as _json
+                argumen = _json.dumps(argumen, ensure_ascii=False)
+            daftar_calls.append({
+                "id": getattr(tc, "id", "") or "",
+                "nama": fungsi.name,
+                "argumen_mentah": argumen,
+            })
+        logger.debug("Cloud OK (%d karakter, %d tool_calls)", len(konten), len(daftar_calls))
+        return ReplyDetail(
+            konten=konten,
+            tool_calls=daftar_calls,
+            finish_reason=getattr(pilihan, "finish_reason", "") or "",
+        )
 
     # ---------- internal ----------
     def _klien_untuk(self, key: str) -> Any:

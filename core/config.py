@@ -139,10 +139,19 @@ HOTKEY_TOGGLE = "ctrl+space"      # toggle jendela utama
 HOTKEY_VOICE = "ctrl+shift+v"     # mulai/stop rekam suara
 
 # ------------------------------------------------------------
-# 9. Agent & tools (FASE 2)
+# 9. Agent, tools & riwayat (FASE 2)
 # ------------------------------------------------------------
 AGENT_MAX_ITERATIONS = 5          # batas iterasi loop tool-calling
 FILE_MAX_TOKENS = 4000            # file lebih besar dari ini -> chunk + summarize
+
+# Tools bawaan (dipanggil agent saat model mengirim tool_calls)
+TOOLS_ENABLED = True              # False -> assistant murni chat tanpa tools
+TOOLS_WORKSPACE: Path = APP_DIR / "workspace"   # file tools HANYA boleh di sini
+TOOL_MAX_FILE_BYTES = 1_000_000   # batas baca file ~1 MB (sisanya dipotong)
+TOOL_WRITE_CONFIRM = True         # tulis file selalu minta konfirmasi user dulu
+
+# Riwayat chat (SQLite — core/history.py)
+HISTORY_MAX_CONTEXT = 20          # maks pesan lama yang dikirim ulang ke model
 
 # ------------------------------------------------------------
 # 10. Logging (rotasi agar SSD tidak penuh)

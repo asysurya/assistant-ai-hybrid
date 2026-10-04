@@ -8,14 +8,14 @@ dan proyek ini mengikuti [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
-- Routing 3-tier: Tier 1 (qwen2.5:0.5b, chat ringan), Tier 2 (qwen3:1.7b, tool calling), Tier 3 (gpt-oss:120b-cloud, kompleks)
-- Escalation otomatis antar tier (1 -> 2 -> 3) saat tier rendah gagal/menyerah (jawaban kosong)
-- Fallback turun 3 -> 2 saat cloud gagal (semua key 429 / koneksi mati)
-- Klien Ollama lokal (core/local_client.py) dan Ollama Cloud dengan rotasi multi-key (core/cloud_client.py)
-- Deteksi gambar (core/vision.py) -> routing langsung ke model vision di cloud (bypass router)
-- Orkestrator 3-tier (core/assistant.py) dengan statistik pemakaian + pesan gagal ramah Bahasa Indonesia
-- CLI main.py: chat interaktif, --route (inspeksi keputusan router), --cek (diagnosis kesiapan)
-- Test suite: tier router (8), escalation assistant (10), rotasi 429 cloud client (5) — total 43 test
+- Riwayat chat SQLite (core/history.py): sesi berjudul otomatis, pesan + metadata tier/model/durasi, pencarian keyword aman (escape LIKE), ekspor Markdown/JSON/TXT, statistik per tier — mode WAL, thread-safe, tahan crash
+- Toolkit bawaan (core/tools.py) dengan registry + skema OpenAI tool calling: get_time, hitung (kalkulator AST aman + proteksi DoS), baca_file, tulis_file (butuh konfirmasi), daftar_folder, todo — semua tool file terkurung di folder workspace
+- Agent loop tool-calling (core/agent.py): maks AGENT_MAX_ITERATIONS iterasi, argumen JSON rusak dikirim balik agar model mengoreksi diri, callback konfirmasi untuk tool penulis (default: tolak)
+- chat_detail() pada klien lokal & cloud — kembalikan teks + tool_calls (ReplyDetail) tanpa mengubah perilaku chat() lama
+- Integrasi agent ke Assistant: Tier 2 & Tier 3 diproses via tool-calling bila tools aktif; Tier 1 tetap chat polos; jejak tools terakhir tersedia untuk CLI/UI
+- Pembersih blok <think>…</think> jawaban model Qwen3
+- CLI main.py: chat kini berkonteks (N pesan terakhir dari SQLite), sesi tersimpan otomatis, perintah baru /baru /riwayat /sesi /cari /export /alat + flag --riwayat; log INFO/WARNING hanya ke file agar terminal bersih
+- Test suite FASE 2: history (14), tools (15), agent+integrasi (15) — total 87 test
 
 ### Changed
 - Perubahan pada fitur yang sudah ada
