@@ -4,7 +4,7 @@
 # ORKESTRATOR ROUTING 3-TIER (fitur baru).
 #
 # Alur satu kali chat():
-#   1. Ada gambar di messages?  -> bypass ke model VISION di cloud
+#   1. Ada gambar di messages?  -> bypass ke model VISION LOKAL (qwen3.5:2b)
 #   2. TierRouter klasifikasi prompt -> TIER_1 / TIER_2 / TIER_3
 #   3. Eksekusi chain sesuai tier awal + ESCALATION otomatis:
 #        TIER_1 -> TIER_2 -> TIER_3   (tier rendah gagal/menyerah)
@@ -60,7 +60,7 @@ _RE_THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 def _buang_tag_think(teks: str) -> str:
     """Buang blok <think>...</think> milik model reasoning (Qwen3).
 
-    Model tier 2 (qwen3:1.7b) sering menyisipkan proses berpikir di
+    Model Qwen (mis. tier 2 qwen3.5:2b) kadang menyisipkan proses berpikir di
     dalam jawaban — tidak enak ditampilkan ke user. Fungsi ini membersihkannya
     TANPA menyentuh jawaban model lain (tanpa tag = tanpa perubahan).
     """
@@ -292,14 +292,17 @@ class Assistant:
         return bool(cfg.TOOLS_ENABLED)
 
     def _coba_vision(self, messages: list[dict]) -> AssistantReply:
-        """Jalur vision: model vision di cloud (fallback lokal tidak ada yang
-        mampu vision → bila gagal, kembalikan pesan gagal yang ramah)."""
+        """Jalur vision: model vision LOKAL (cfg.VISION_MODEL = qwen3.5:2b).
+
+        Konsolidasi model: vision tidak lagi ke cloud — hemat kuota key cloud
+        dan tetap jalan offline. Bila gagal -> pesan gagal yang ramah (tidak
+        ada fallback vision lain; gpt-oss:120b-cloud adalah model teks saja)."""
         jalur: list[str] = []
         self._statistik["vision"] += 1
-        model = cfg.CLOUD_MODELS["vision"]
+        model = cfg.VISION_MODEL
         try:
-            teks = self.cloud.chat(messages, model=model)
-        except CloudClientError as exc:
+            teks = self.local.chat(messages, model=model)
+        except LocalClientError as exc:
             jalur.append(f"vision: gagal — {exc}")
             self._statistik["gagal"] += 1
             logger.warning("Vision gagal: %s", exc)
@@ -384,6 +387,7 @@ if __name__ == "__main__":
     print(f"\nModel tier 1 : {cfg.TIER1_MODEL}")
     print(f"Model tier 2 : {cfg.TIER2_MODEL}")
     print(f"Model tier 3 : {cfg.TIER3_MODEL}")
+    print(f"Model vision : {cfg.VISION_MODEL} (lokal)")
     print(f"Key cloud    : {len(asisten.cloud.pool)} key terdaftar")
     print(f"Ollama hidup : {asisten.local.is_available()}")
 

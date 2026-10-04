@@ -10,7 +10,7 @@
 #   - tier1+2 gagal -> escalate tier3 (cloud)
 #   - tier3 (cloud) gagal -> fallback TURUN ke tier2
 #   - semua gagal -> pesan ramah, ok=False
-#   - gambar -> bypass vision (model vision di cloud)
+#   - gambar -> bypass vision (model vision LOKAL qwen3.5:2b)
 #   - escalation_enabled=False -> berhenti di tier awal
 #
 # Jalankan:
@@ -36,15 +36,25 @@ from core.tier_router import Tier, TierRouter  # noqa: E402
 # Fake client (meniru antarmuka LocalClient / CloudClient)
 # ------------------------------------------------------------
 class KlienLokalPalsu:
-    """Fake LocalClient: perilaku per nama model — str jawaban / Exception."""
+    """Fake LocalClient: perilaku per nama model ATAU per urutan panggilan.
 
-    def __init__(self, perilaku: dict | None = None):
+    - perilaku: dict {model: jawaban/Exception} — dipakai berulang.
+    - urutan:   list hasil per panggilan berurutan — DIPERLUKAN sejak
+      konsolidasi model: tier 1 & 2 sama-sama qwen3.5:2b sehingga dict
+      per-model bertabrakan (satu key untuk dua tier).
+    """
+
+    def __init__(self, perilaku: dict | None = None, urutan: list | None = None):
         self.perilaku = perilaku or {}
+        self.urutan = list(urutan) if urutan else None
         self.dipanggil: list[str] = []
 
     def chat(self, messages, model=None, max_tokens=None, temperature=None) -> str:
         self.dipanggil.append(model)
-        hasil = self.perilaku.get(model, "")
+        if self.urutan:
+            hasil = self.urutan.pop(0)      # habis -> StopIteration (test gagal jelas)
+        else:
+            hasil = self.perilaku.get(model, "")
         if isinstance(hasil, Exception):
             raise hasil
         return hasil
@@ -94,10 +104,11 @@ def test_tier1_sukses_langsung():
 
 
 def test_escalasi_tier1_ke_tier2():
-    lokal = KlienLokalPalsu({
-        cfg.TIER1_MODEL: LocalClientError("ollama mati"),
-        cfg.TIER2_MODEL: "Jawaban dari tier 2",
-    })
+    # Tier 1 & 2 kini model SAMA (qwen3.5:2b) — pakai urutan panggilan.
+    lokal = KlienLokalPalsu(urutan=[
+        LocalClientError("ollama mati"),      # panggilan 1 (tier 1): gagal
+        "Jawaban dari tier 2",                # panggilan 2 (tier 2): sukses
+    ])
     a = buat(lokal, KlienCloudPalsu())
     reply = a.chat("halo")                            # sapaan -> mulai Tier 1
     assert reply.ok is True
@@ -108,10 +119,10 @@ def test_escalasi_tier1_ke_tier2():
 
 
 def test_escalasi_hingga_tier3():
-    lokal = KlienLokalPalsu({
-        cfg.TIER1_MODEL: LocalClientError("mati"),
-        cfg.TIER2_MODEL: LocalClientError("mati juga"),
-    })
+    lokal = KlienLokalPalsu(urutan=[
+        LocalClientError("mati"),             # panggilan 1 (tier 1): gagal
+        LocalClientError("mati juga"),        # panggilan 2 (tier 2): gagal
+    ])
     cloud = KlienCloudPalsu()                          # default: jawaban cloud
     a = buat(lokal, cloud)
     reply = a.chat("halo")
@@ -122,10 +133,10 @@ def test_escalasi_hingga_tier3():
 
 
 def test_tier_menyerah_jawaban_kosong_juga_escalate():
-    lokal = KlienLokalPalsu({
-        cfg.TIER1_MODEL: "   ",                        # jawaban kosong = menyerah
-        cfg.TIER2_MODEL: "Jawaban tier 2",
-    })
+    lokal = KlienLokalPalsu(urutan=[
+        "   ",                                # panggilan 1: kosong = menyerah
+        "Jawaban tier 2",                     # panggilan 2: sukses
+    ])
     a = buat(lokal, KlienCloudPalsu())
     reply = a.chat("halo")
     assert reply.ok is True
@@ -147,10 +158,10 @@ def test_tier3_gagal_fallback_turun_ke_tier2():
 
 
 def test_semua_tier_gagal_pesan_ramah():
-    lokal = KlienLokalPalsu({
-        cfg.TIER1_MODEL: LocalClientError("mati"),
-        cfg.TIER2_MODEL: LocalClientError("mati"),
-    })
+    lokal = KlienLokalPalsu(urutan=[
+        LocalClientError("mati"),             # tier 1 gagal
+        LocalClientError("mati"),             # tier 2 gagal (model sama)
+    ])
     cloud = KlienCloudPalsu({
         cfg.TIER3_MODEL: CloudRateLimited("429 semua"),
     })
@@ -162,16 +173,17 @@ def test_semua_tier_gagal_pesan_ramah():
     assert len(reply.escalation) == 3                 # tiga tier dicoba semua
 
 
-def test_vision_bypass_ke_cloud():
-    lokal = KlienLokalPalsu({cfg.TIER1_MODEL: "tidak boleh dipanggil"})
-    cloud = KlienCloudPalsu({cfg.CLOUD_MODELS["vision"]: "Ini gambar kucing."})
+def test_vision_bypass_ke_model_lokal():
+    # Vision kini LOKAL (qwen3.5:2b multimodal) — cloud TIDAK dipanggil.
+    lokal = KlienLokalPalsu({cfg.VISION_MODEL: "Ini gambar kucing."})
+    cloud = KlienCloudPalsu()
     a = buat(lokal, cloud)
     reply = a.chat("gambar ini apa?", image_url="data:image/png;base64,XXX")
     assert reply.ok is True
     assert reply.tier_used == Tier.VISION
     assert reply.text == "Ini gambar kucing."
-    assert lokal.dipanggil == []                      # tier lokal dilewati total
-    assert cloud.dipanggil == [cfg.CLOUD_MODELS["vision"]]
+    assert lokal.dipanggil == [cfg.VISION_MODEL]      # vision lewat klien lokal
+    assert cloud.dipanggil == []                      # cloud dilewati total
 
 
 def test_escalation_disabled_berhenti_di_tier_awal():

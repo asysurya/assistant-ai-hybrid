@@ -5,8 +5,8 @@ Chat teks + suara, analisis file, tool calling, system monitor — dengan **rout
 antara model **lokal** (Ollama, offline & gratis) dan model **cloud** (Ollama Cloud).
 
 > Proyek dibangun **bertahap per fase** (12 fase). Setiap fase wajib lulus test
-> sebelum lanjut ke fase berikutnya. Status terkini: **FASE 1 selesai — core
-> backend + routing 3-tier berjalan**.
+> sebelum lanjut ke fase berikutnya. Status terkini: **FASE 1–2 selesai — routing
+> 3-tier, riwayat chat SQLite, dan tool calling berjalan**.
 
 | | |
 |---|---|
@@ -19,13 +19,13 @@ antara model **lokal** (Ollama, offline & gratis) dan model **cloud** (Ollama Cl
 ## Kenapa hybrid?
 
 Laptop 8GB RAM tidak realistis menjalankan model besar secara lokal, tetapi memakai
-cloud untuk semua hal juga boros dan bergantung internet. Strategi **3-tier** memberi
-tiga keuntungan sekaligus. Pertama, tugas ringan ditangani `qwen2.5:0.5b` di lokal —
-cepat, gratis, dan tetap jalan tanpa internet. Kedua, tugas menengah + tool calling
-ditangani `qwen3:1.7b` di lokal. Ketiga, tugas berat (analisis panjang, coding,
-vision) diteruskan ke Ollama Cloud dengan rotasi multi API key. Semuanya saling
-menjadi fallback: tier 1 gagal -> naik tier 2 -> naik tier 3; cloud gagal -> turun
-ke tier 2 lokal.
+cloud untuk semua hal juga boros dan bergantung internet. Strategi **3-tier** dengan
+**konsolidasi model** memberi hasil paling hemat: cukup DUA model sekaligus.
+`qwen3.5:2b` lokal menangani Tier 1 (chat ringan), Tier 2 (tool calling), DAN vision
+(analisis gambar) — lulus 7/7 test tool calling — sementara `gpt-oss:120b-cloud`
+menangani tugas berat via Ollama Cloud dengan rotasi multi API key. Satu model lokal
+berarti hemat RAM (~2 GB) dan cukup satu `ollama pull`. Semuanya saling menjadi
+fallback: tier 1 gagal -> naik tier 2 -> naik tier 3; cloud gagal -> turun ke tier 2.
 
 ## Arsitektur routing 3-tier
 
@@ -38,15 +38,16 @@ ke tier 2 lokal.
                      |  (upgrade: classifier LLM,   |
                      |   FASE 10)                   |
                      +---+------------+----------+--+
-          TIER_1         |       TIER_2 |           |   TIER_3 / VISION
-    gambar? -> VISION    |              |           |   (cloud)
+          TIER_1         |       TIER_2 |           |   TIER_3 (cloud)
+    gambar? -> VISION    |              |           |
+    (lokal)              |              |           |
              +-----------+              |           +--------------+
              v                        v                          v
    +------------------+   +----------------------+   +----------------------+
    | Tier 1 - lokal   |   | Tier 2 - lokal       |   | Tier 3 - cloud       |
-   | qwen2.5:0.5b     |   | qwen3:1.7b           |   | gpt-oss:120b-cloud   |
-   | chat ringan      |   | tool calling         |   | kompleks + vision    |
-   | (~0.5 GB RAM)    |   | (~1.7 GB RAM)        |   | (multi-key rotasi)   |
+   | qwen3.5:2b       |   | qwen3.5:2b           |   | gpt-oss:120b-cloud   |
+   | chat ringan      |   | tool calling         |   | kompleks + coding    |
+   | (model sama)     |   | (model sama)         |   | (multi-key rotasi)   |
    +--------+---------+   +----------+-----------+   +----------+-----------+
             |  gagal /               |  gagal                     |  gagal
             |  jawaban kosong        |                            |  (429 habis /
@@ -56,12 +57,14 @@ ke tier 2 lokal.
                         chain: 1 --> 2 --> 3
 ```
 
-Total RAM lokal (tier 1 + 2) sekitar 2-3 GB + Windows sekitar 3 GB = sekitar 6 GB
-- aman untuk laptop RAM 8 GB.
+Total RAM model lokal sekitar 2 GB (qwen3.5:2b dimuat SEKALI untuk tier 1/2/vision)
++ Windows sekitar 3 GB = sekitar 5 GB — makin lega untuk laptop RAM 8 GB (sebelumnya
+~6 GB karena memakai dua model lokal berbeda).
 
 Aturan penting routing:
 
-- Ada gambar (`image_url`) di pesan -> langsung model vision di cloud (bypass router).
+- Ada gambar (`image_url`) di pesan -> langsung model vision **lokal** `qwen3.5:2b`
+  (bypass router — hemat kuota key cloud, tetap jalan offline).
 - Sapaan/pertanyaan ringan -> Tier 1; butuh tools/ringkasan/hitung -> Tier 2;
   coding/analisis/panjang (>400 karakter) -> Tier 3.
 - Tier rendah **gagal atau menyerah** (jawaban kosong) -> escalation otomatis
@@ -74,7 +77,7 @@ Aturan penting routing:
 | Fase | Cakupan | Status |
 |------|---------|--------|
 | 1 | Core backend + git setup | **selesai** — config, key_pool, klien lokal/cloud, router 3-tier, assistant, CLI |
-| 2 | Tools + agent loop | belum |
+| 2 | Riwayat chat + tools + agent loop | **selesai** — history SQLite, 6 tools, agent tool-calling |
 | 3 | File parser (Diceo) | belum |
 | 4 | Crypto (keyring) + wizard | belum |
 | 5 | UI dasar (CustomTkinter) | belum |
@@ -91,12 +94,12 @@ Aturan penting routing:
 ```
 assistant-ai-hybrid/
 ├── .github/            CI/CD (build.yml, release.yml) + template issue/PR
-├── core/               Backend: config, key_pool, tier_router, client, assistant
+├── core/               Backend: config, key_pool, tier_router, client, assistant, history, tools, agent
 ├── ui/                 CustomTkinter (FASE 5+)
 ├── voice/              STT/TTS (FASE 8+)
 ├── assets/             Ikon, font, aset statis
 ├── scripts/            Skrip build & training router
-├── tests/              Test suite pytest (43 test)
+├── tests/              Test suite pytest (87 test)
 └── main.py             Entry point — CLI test routing (GUI di FASE 5)
 ```
 
@@ -112,6 +115,9 @@ cd assistant-ai-hybrid
 python -m venv .venv
 .venv\Scripts\activate            # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+# Satu-satunya model lokal yang dibutuhkan (chat + tool calling + vision):
+ollama pull qwen3.5:2b
 
 # Modul core bisa dijalankan standalone (masing-masing punya demo):
 python core/config.py

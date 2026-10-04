@@ -4,8 +4,9 @@
 # Helper VISION: mendeteksi gambar di dalam struktur messages
 # format OpenAI (dipakai Ollama juga, karena API-nya kompatibel).
 #
-# Aturan routing (sesuai spesifikasi):
-#   Ada gambar di pesan -> LANGSUNG model vision di cloud (bypass router).
+# Aturan routing (konsolidasi model Qwen3.5-2B):
+#   Ada gambar di pesan -> LANGSUNG model vision LOKAL qwen3.5:2b
+#   (bypass router; hemat kuota key cloud, tetap jalan offline).
 #   Deteksi ini jalan SEBELUM klasifikasi tier di core/assistant.py.
 # ============================================================
 

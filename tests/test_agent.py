@@ -94,7 +94,7 @@ def test_tanpa_tool_call_jawaban_langsung():
     reg, _ = buat_registry()
     agen = Agent(reg)
     klien = KlienDetailPalsu([ReplyDetail(konten="Halo, saya bisa membantu!")])
-    hasil = agen.run(klien, [{"role": "user", "content": "hai"}], model="qwen3:1.7b")
+    hasil = agen.run(klien, [{"role": "user", "content": "hai"}], model="qwen3.5:2b")
     assert hasil.jawaban == "Halo, saya bisa membantu!"
     assert hasil.iterasi == 1
     assert hasil.tools_dipakai == []
@@ -110,7 +110,7 @@ def test_tool_call_dieksekusi_dan_hasil_dikirim_balik():
         ReplyDetail(konten="Hasilnya 20."),
     ])
     hasil = agen.run(klien, [{"role": "user", "content": "hitung (2+3)*4"}],
-                     model="qwen3:1.7b")
+                     model="qwen3.5:2b")
     assert hasil.jawaban == "Hasilnya 20."
     assert hasil.iterasi == 2
     assert len(hasil.tools_dipakai) == 1 and "hitung" in hasil.tools_dipakai[0]

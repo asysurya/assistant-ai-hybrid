@@ -18,7 +18,18 @@ dan proyek ini mengikuti [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Test suite FASE 2: history (14), tools (15), agent+integrasi (15) — total 87 test
 
 ### Changed
-- Perubahan pada fitur yang sudah ada
+- KONSOLIDASI MODEL (update arsitektur Qwen3.5-2B): satu model lokal `qwen3.5:2b`
+  kini menangani Tier 1 + Tier 2 + Vision sekaligus (lulus 7/7 test: tool calling
+  5/5 JSON valid, chat natural tanpa false tool call, ambiguous OK) — `qwen2.5:0.5b`,
+  `qwen3:1.7b`, dan `qwen2.5:1.5b` tidak lagi dibutuhkan; cukup `ollama pull qwen3.5:2b`
+- Vision pindah dari cloud (`gemma4:31b-cloud`) ke model lokal `qwen3.5:2b` —
+  konstanta baru `cfg.VISION_MODEL`, jalur vision kini lewat LocalClient (hemat
+  kuota key cloud, tetap jalan offline)
+- Cloud disederhanakan jadi SATU model: `gpt-oss:120b-cloud` untuk chat + coding
+  berat; `qwen3-coder:480b-cloud` dihapus dari konfigurasi (coding menengah cukup
+  oleh model lokal, coding berat masuk Tier 3)
+- Estimasi RAM model lokal turun ~3.5 GB -> ~2 GB (total ~5 GB termasuk Windows)
+- Test fake assistant mendukung skenario urutan panggilan (tier 1 & 2 kini model sama)
 
 ### Fixed
 - Bug yang diperbaiki

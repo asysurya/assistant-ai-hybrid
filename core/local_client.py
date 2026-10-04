@@ -82,7 +82,7 @@ class LocalClient:
         if klien.is_available():
             jawaban = klien.chat(
                 [{"role": "user", "content": "halo"}],
-                model="qwen2.5:0.5b",
+                model="qwen3.5:2b",
                 max_tokens=512,
             )
     """

@@ -94,7 +94,7 @@ class Agent:
 
     Contoh:
         agent = Agent(ToolRegistry())
-        hasil = agent.run(klien_lokal, messages, model="qwen3:1.7b")
+        hasil = agent.run(klien_lokal, messages, model="qwen3.5:2b")
         print(hasil.jawaban)
         print(hasil.jejak)        # jejak tool yang dipakai
 
@@ -294,7 +294,7 @@ if __name__ == "__main__":
         ReplyDetail(konten="Hasil (2+3)*4 adalah 20."),
     ])
     hasil = agen.run(klien, [{"role": "user", "content": "hitung (2+3)*4"}],
-                     model="qwen3:1.7b")
+                     model="qwen3.5:2b")
     print(f"  Jawaban  : {hasil.jawaban}")
     print(f"  Iterasi  : {hasil.iterasi}")
     print(f"  Jejak    : {hasil.jejak}")

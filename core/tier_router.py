@@ -3,10 +3,10 @@
 # ------------------------------------------------------------
 # ROUTER 3-TIER: memilih "kekuatan" model berdasarkan beratnya prompt.
 #
-#   TIER_1  qwen2.5:0.5b   chat ringan & sapaan        (lokal, ~0.5 GB RAM)
-#   TIER_2  qwen3:1.7b     tools + tugas menengah      (lokal, ~1.7 GB RAM)
+#   TIER_1  qwen3.5:2b     chat ringan & sapaan        (lokal, ~2 GB RAM)
+#   TIER_2  qwen3.5:2b     tools + tugas menengah      (lokal, model yang sama)
 #   TIER_3  gpt-oss:120b   kompleks / panjang          (cloud)
-#   VISION  gemma4:31b     bypass: ada gambar          (cloud)
+#   VISION  qwen3.5:2b     bypass: ada gambar          (lokal, multimodal)
 #
 # Klasifikasi memakai HEURISTIK keyword Bahasa Indonesia: cepat (mikrodetik),
 # gratis, dan offline. Kata kunci dicocokkan dengan WORD BOUNDARY sehingga

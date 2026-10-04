@@ -78,18 +78,25 @@ OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1"
 #   Linux   : export OLLAMA_CLOUD_KEYS=key1,key2,key3
 OLLAMA_CLOUD_KEYS: list[str] = []
 
-# Model per peran (role) — bisa diganti lewat Settings > Model (FASE 6)
+# Model cloud — kini HANYA SATU (konsolidasi model Qwen3.5-2B, lihat catatan).
+# Semua tugas berat (chat panjang, analisis, coding kompleks) diteruskan ke sini.
 CLOUD_MODELS: dict[str, str] = {
-    "chat":   "gpt-oss:120b-cloud",       # chat & analisis teks berat
-    "coding": "qwen3-coder:480b-cloud",   # tugas coding
-    "vision": "gemma4:31b-cloud",         # analisis gambar
+    "chat":   "gpt-oss:120b-cloud",   # chat berat + Tier 3
+    "coding": "gpt-oss:120b-cloud",   # coding kompleks (model cloud yang sama)
 }
+# CATATAN KONSOLIDASI (update arsitektur Qwen3.5-2B):
+#   - Vision TIDAK lagi memakai cloud (dulu gemma4:31b-cloud) — sekarang
+#     memakai model LOKAL qwen3.5:2b (lihat VISION_MODEL di bagian router).
+#   - qwen3-coder:480b-cloud dihapus — coding ringan/menengah cukup oleh
+#     qwen3.5:2b lokal, coding berat masuk Tier 3 (gpt-oss:120b-cloud).
+#   - Total cukup 2 model: 1 lokal + 1 cloud (sebelumnya 3 lokal + 3 cloud).
 
 # ------------------------------------------------------------
 # 4. Ollama lokal (offline, hemat RAM)
 # ------------------------------------------------------------
 OLLAMA_LOCAL_BASE_URL = "http://localhost:11434/v1"
-OLLAMA_LOCAL_MODEL = "qwen2.5:1.5b"    # kecil (~1.5GB), cocok untuk RAM 8GB
+OLLAMA_LOCAL_MODEL = "qwen3.5:2b"      # SATU model lokal serbaguna (~2 GB RAM):
+                                       # chat + tool calling + vision (multimodal)
 OLLAMA_LOCAL_TIMEOUT = 90              # detik
 OLLAMA_LOCAL_MAX_TOKENS = 1024
 
@@ -107,11 +114,15 @@ KEY_COOLDOWN_SECONDS = 1800            # 30 menit; key yang kena 429 di-"istirah
 #   Tier 2 : tools + tugas menengah    -> lokal sedang (dukungan tool calling)
 #   Tier 3 : kompleks / panjang        -> cloud (gagal -> fallback turun ke Tier 2)
 # Escalation otomatis: tier rendah gagal/menyerah -> naik ke tier berikutnya.
-TIER1_MODEL = "qwen2.5:0.5b"           # ganti ke "qwen2.5:1.5b" bila 0.5b terasa lemah
+# Tier 1 & 2 memakai MODEL LOKAL YANG SAMA (qwen3.5:2b lulus 7/7 test:
+# tool calling 5/5 JSON valid, chat natural tanpa false tool call, ambiguous OK).
+# Pemisahan tier tetap berguna untuk batas token & kebijakan escalation.
+TIER1_MODEL = "qwen3.5:2b"             # chat ringan (lokal, ~2 GB RAM)
 TIER1_MAX_TOKENS = 512
-TIER2_MODEL = "qwen3:1.7b"             # tool calling di lokal
+TIER2_MODEL = "qwen3.5:2b"             # tool calling (lokal, model yang sama)
 TIER2_MAX_TOKENS = 1024
 TIER3_MODEL = CLOUD_MODELS["chat"]     # gpt-oss:120b-cloud
+VISION_MODEL = "qwen3.5:2b"            # analisis gambar -> LOKAL (bypass router)
 ESCALATION_ENABLED = True              # False = tetap di tier hasil klasifikasi saja
 
 # ------------------------------------------------------------
@@ -204,7 +215,8 @@ def ringkasan() -> str:
         f"  Log         : {LOG_DIR}",
         f"  Model       : {MODEL_DIR}",
         f"  Cloud URL   : {OLLAMA_CLOUD_BASE_URL}",
-        f"  Model cloud : {', '.join(CLOUD_MODELS.values())}",
+        f"  Model cloud : {CLOUD_MODELS['chat']} (chat + coding)",
+        f"  Vision      : {VISION_MODEL} (lokal)",
         f"  Lokal       : {OLLAMA_LOCAL_MODEL} @ {OLLAMA_LOCAL_BASE_URL}",
         f"  Router      : {ROUTER_MODEL} (fallback: {ROUTER_FALLBACK})",
         f"  Voice       : STT={STT_ENGINE}, TTS={TTS_ENGINE} ({TTS_VOICE})",
