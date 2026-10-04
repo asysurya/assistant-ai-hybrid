@@ -79,6 +79,15 @@ def _default_config() -> dict:
             "fallback": cfg.ROUTER_FALLBACK,
             "local_max_prompt_length": cfg.LOCAL_MAX_PROMPT_LENGTH,
         },
+        "tiers": {
+            "tier1_model": cfg.TIER1_MODEL,
+            "tier1_max_tokens": cfg.TIER1_MAX_TOKENS,
+            "tier2_model": cfg.TIER2_MODEL,
+            "tier2_max_tokens": cfg.TIER2_MAX_TOKENS,
+            "tier3_model": cfg.TIER3_MODEL,
+            "tier2_prompt_length": cfg.TIER2_PROMPT_LENGTH,
+            "escalation_enabled": cfg.ESCALATION_ENABLED,
+        },
         "key_pool": {
             "cooldown_seconds": cfg.KEY_COOLDOWN_SECONDS,
         },

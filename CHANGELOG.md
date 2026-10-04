@@ -8,7 +8,14 @@ dan proyek ini mengikuti [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
-- Fitur yang sedang dalam pengembangan
+- Routing 3-tier: Tier 1 (qwen2.5:0.5b, chat ringan), Tier 2 (qwen3:1.7b, tool calling), Tier 3 (gpt-oss:120b-cloud, kompleks)
+- Escalation otomatis antar tier (1 -> 2 -> 3) saat tier rendah gagal/menyerah (jawaban kosong)
+- Fallback turun 3 -> 2 saat cloud gagal (semua key 429 / koneksi mati)
+- Klien Ollama lokal (core/local_client.py) dan Ollama Cloud dengan rotasi multi-key (core/cloud_client.py)
+- Deteksi gambar (core/vision.py) -> routing langsung ke model vision di cloud (bypass router)
+- Orkestrator 3-tier (core/assistant.py) dengan statistik pemakaian + pesan gagal ramah Bahasa Indonesia
+- CLI main.py: chat interaktif, --route (inspeksi keputusan router), --cek (diagnosis kesiapan)
+- Test suite: tier router (8), escalation assistant (10), rotasi 429 cloud client (5) — total 43 test
 
 ### Changed
 - Perubahan pada fitur yang sudah ada

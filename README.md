@@ -5,8 +5,8 @@ Chat teks + suara, analisis file, tool calling, system monitor — dengan **rout
 antara model **lokal** (Ollama, offline & gratis) dan model **cloud** (Ollama Cloud).
 
 > Proyek dibangun **bertahap per fase** (12 fase). Setiap fase wajib lulus test
-> sebelum lanjut ke fase berikutnya. Status terkini: **FASE 1 — batch pertama
-> (fondasi config, key pool, CI/CD)**.
+> sebelum lanjut ke fase berikutnya. Status terkini: **FASE 1 selesai — core
+> backend + routing 3-tier berjalan**.
 
 | | |
 |---|---|
@@ -19,48 +19,61 @@ antara model **lokal** (Ollama, offline & gratis) dan model **cloud** (Ollama Cl
 ## Kenapa hybrid?
 
 Laptop 8GB RAM tidak realistis menjalankan model besar secara lokal, tetapi memakai
-cloud untuk semua hal juga boros dan bergantung internet. Strategi hybrid memberi
-tiga keuntungan sekaligus. Pertama, tugas ringan (pertanyaan singkat, draft teks)
-ditangani `qwen2.5:1.5b` di lokal — cepat, gratis, dan tetap jalan tanpa internet.
-Kedua, tugas berat (analisis panjang, coding, vision) diteruskan ke Ollama Cloud
-dengan rotasi multi API key agar tidak mudah kena rate limit. Ketiga, keduanya
-saling menjadi fallback: lokal error → cloud, cloud 429 → rotasi key → lokal.
+cloud untuk semua hal juga boros dan bergantung internet. Strategi **3-tier** memberi
+tiga keuntungan sekaligus. Pertama, tugas ringan ditangani `qwen2.5:0.5b` di lokal —
+cepat, gratis, dan tetap jalan tanpa internet. Kedua, tugas menengah + tool calling
+ditangani `qwen3:1.7b` di lokal. Ketiga, tugas berat (analisis panjang, coding,
+vision) diteruskan ke Ollama Cloud dengan rotasi multi API key. Semuanya saling
+menjadi fallback: tier 1 gagal -> naik tier 2 -> naik tier 3; cloud gagal -> turun
+ke tier 2 lokal.
 
-## Arsitektur routing
+## Arsitektur routing 3-tier
 
 ```
-                        Input user (teks / gambar / file)
-                                      |
-                       +--------------v---------------+
-                       |            Router            |
-                       |  (Qwen3-0.6B fine-tuned ID,  |
-                       |   fallback: heuristik)       |
-                       +---+-------------+----------+-+
-             LOCAL          |             |           |   CLOUD_VISION
-                 +----------+             |           +-------------+
-                 v                       v                         v
-       +------------------+   +----------------------+   +------------------+
-       |  Ollama lokal    |   |  Ollama Cloud        |   |  Ollama Cloud    |
-       |  qwen2.5:1.5b    |   |  gpt-oss:120b-cloud  |   |  gemma4:31b      |
-       |  (offline, gratis)|  |  (multi-key rotasi)  |   |  (vision)        |
-       +--------+---------+   +----------+-----------+   +--------+---------+
-                |                        |                        |
-                |  error / RAM penuh     | 429 -> rotasi key      |
-                +-------> fallback <-----+------------------------+
+                      Input user (teks / gambar / file)
+                                    |
+                     +--------------v---------------+
+                     |          TierRouter          |
+                     |  heuristik keyword Bahasa ID |
+                     |  (upgrade: classifier LLM,   |
+                     |   FASE 10)                   |
+                     +---+------------+----------+--+
+          TIER_1         |       TIER_2 |           |   TIER_3 / VISION
+    gambar? -> VISION    |              |           |   (cloud)
+             +-----------+              |           +--------------+
+             v                        v                          v
+   +------------------+   +----------------------+   +----------------------+
+   | Tier 1 - lokal   |   | Tier 2 - lokal       |   | Tier 3 - cloud       |
+   | qwen2.5:0.5b     |   | qwen3:1.7b           |   | gpt-oss:120b-cloud   |
+   | chat ringan      |   | tool calling         |   | kompleks + vision    |
+   | (~0.5 GB RAM)    |   | (~1.7 GB RAM)        |   | (multi-key rotasi)   |
+   +--------+---------+   +----------+-----------+   +----------+-----------+
+            |  gagal /               |  gagal                     |  gagal
+            |  jawaban kosong        |                            |  (429 habis /
+            |                        |                            |   koneksi)
+            +--------> escalate -----+          <--- fallback turun ke Tier 2
+
+                        chain: 1 --> 2 --> 3
 ```
+
+Total RAM lokal (tier 1 + 2) sekitar 2-3 GB + Windows sekitar 3 GB = sekitar 6 GB
+- aman untuk laptop RAM 8 GB.
 
 Aturan penting routing:
 
-- Ada gambar (`image_url`) di pesan → langsung `CLOUD_VISION`, tanpa menunggu router.
-- Prompt pendek & sederhana → `LOCAL`; panjang/kompleks → `CLOUD_TEXT`.
-- Cloud kena 429 → rotasi API key berikutnya (cooldown 30 menit per key).
-- Semua key sedang cooldown ATAU lokal error → fallback otomatis ke lane lain.
+- Ada gambar (`image_url`) di pesan -> langsung model vision di cloud (bypass router).
+- Sapaan/pertanyaan ringan -> Tier 1; butuh tools/ringkasan/hitung -> Tier 2;
+  coding/analisis/panjang (>400 karakter) -> Tier 3.
+- Tier rendah **gagal atau menyerah** (jawaban kosong) -> escalation otomatis
+  ke tier berikutnya: 1 -> 2 -> 3.
+- Cloud gagal (semua key 429 / koneksi mati) -> fallback **turun** ke Tier 2 lokal.
+- Cloud kena 429 -> rotasi API key berikutnya (cooldown 30 menit per key).
 
 ## Status pengembangan (12 fase)
 
 | Fase | Cakupan | Status |
 |------|---------|--------|
-| 1 | Core backend + git setup | **berjalan** — config, config_manager, key_pool selesai; client/router/assistant menyusul |
+| 1 | Core backend + git setup | **selesai** — config, key_pool, klien lokal/cloud, router 3-tier, assistant, CLI |
 | 2 | Tools + agent loop | belum |
 | 3 | File parser (Diceo) | belum |
 | 4 | Crypto (keyring) + wizard | belum |
@@ -78,13 +91,13 @@ Aturan penting routing:
 ```
 assistant-ai-hybrid/
 ├── .github/            CI/CD (build.yml, release.yml) + template issue/PR
-├── core/               Backend: config, key_pool, client, router, tools
+├── core/               Backend: config, key_pool, tier_router, client, assistant
 ├── ui/                 CustomTkinter (FASE 5+)
 ├── voice/              STT/TTS (FASE 8+)
 ├── assets/             Ikon, font, aset statis
 ├── scripts/            Skrip build & training router
-├── tests/              Test suite pytest
-└── main.py             Entry point (dibuat di lanjutan FASE 1 / FASE 5)
+├── tests/              Test suite pytest (43 test)
+└── main.py             Entry point — CLI test routing (GUI di FASE 5)
 ```
 
 ## Mulai (pengembangan)
@@ -100,10 +113,16 @@ python -m venv .venv
 .venv\Scripts\activate            # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Modul FASE 1 bisa dijalankan standalone (masing-masing punya demo):
+# Modul core bisa dijalankan standalone (masing-masing punya demo):
 python core/config.py
 python core/config_manager.py
 python core/key_pool.py
+python core/tier_router.py
+
+# CLI uji routing 3-tier:
+python main.py --route "buatkan kode scraper python"   # inspeksi keputusan router
+python main.py --cek                                   # diagnosis kesiapan sistem
+python main.py                                         # chat interaktif
 
 # Test otomatis:
 python -m pytest tests/ -v

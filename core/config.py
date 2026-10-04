@@ -94,12 +94,25 @@ OLLAMA_LOCAL_TIMEOUT = 90              # detik
 OLLAMA_LOCAL_MAX_TOKENS = 1024
 
 # ------------------------------------------------------------
-# 5. Router (pilih lane: LOCAL / CLOUD_TEXT / CLOUD_VISION)
+# 5. Router 3-tier (klasifikasi prompt -> tier 1 / 2 / 3)
 # ------------------------------------------------------------
 ROUTER_MODEL = "qwen3-router-id"       # Qwen3-0.6B fine-tuned Bahasa ID (FASE 10)
 ROUTER_FALLBACK = "heuristic"          # model router belum ada -> heuristik keyword
-LOCAL_MAX_PROMPT_LENGTH = 400          # prompt lebih panjang dari ini -> cloud
+LOCAL_MAX_PROMPT_LENGTH = 400          # prompt lebih panjang dari ini -> Tier 3 (cloud)
+TIER2_PROMPT_LENGTH = 150              # prompt lebih panjang dari ini -> minimal Tier 2
 KEY_COOLDOWN_SECONDS = 1800            # 30 menit; key yang kena 429 di-"istirahatkan"
+
+# --- Routing 3-tier ---
+#   Tier 1 : chat ringan & sapaan      -> lokal kecil, super hemat RAM
+#   Tier 2 : tools + tugas menengah    -> lokal sedang (dukungan tool calling)
+#   Tier 3 : kompleks / panjang        -> cloud (gagal -> fallback turun ke Tier 2)
+# Escalation otomatis: tier rendah gagal/menyerah -> naik ke tier berikutnya.
+TIER1_MODEL = "qwen2.5:0.5b"           # ganti ke "qwen2.5:1.5b" bila 0.5b terasa lemah
+TIER1_MAX_TOKENS = 512
+TIER2_MODEL = "qwen3:1.7b"             # tool calling di lokal
+TIER2_MAX_TOKENS = 1024
+TIER3_MODEL = CLOUD_MODELS["chat"]     # gpt-oss:120b-cloud
+ESCALATION_ENABLED = True              # False = tetap di tier hasil klasifikasi saja
 
 # ------------------------------------------------------------
 # 6. Voice (STT/TTS) — model di-download on-demand (FASE 8-9)
