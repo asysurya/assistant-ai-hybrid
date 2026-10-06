@@ -13,7 +13,7 @@
 openai>=1.40.0          # SDK official — dipakai untuk Ollama Cloud & lokal (API kompatibel OpenAI)
 httpx>=0.27.0           # HTTP client async untuk util jaringan
 pydantic>=2.8.0         # validasi struktur data (config, response, tool schema)
-psutil>=6.0.0           # system monitor: CPU / RAM / disk / network / battery
+psutil>=6.0.0           # system monitor + device_detector (adaptive runtime, FASE 3A) — punya wheel win_arm64
 Pillow>=10.4.0          # proses gambar (preview upload, thumbnail, base64 ke vision)
 customtkinter>=5.2.2    # UI modern berbasis tkinter (ringan, cocok RAM 8GB)
 pystray>=0.19.5         # ikon system tray + menu tray
